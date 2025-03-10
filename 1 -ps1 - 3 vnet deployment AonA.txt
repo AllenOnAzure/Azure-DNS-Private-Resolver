@@ -1,0 +1,209 @@
+## ps1 - simple 3 virtual network deployment ##
+
+#Variables:
+$resourceGroupName = "Allen-APR"
+$location = "southafricanorth"
+
+$SubscriptionID = "000-000-000-000-3811d5902f92" #sub name
+
+$tag = @{CustomerName="Allen"; AutoShutdownSchedule="Never"; ProjectName="Azure Private Resolver"; Environment="Production";}
+
+
+<#-------------------------------------------#>
+# Set-AzContext -Subscription $SubscriptionID
+<#-------------------------------------------#>
+
+<#---Step 1 - Create a HUB resource group container----#>
+
+$rg = Get-AzResourceGroup -Name $resourceGroupName -ErrorAction SilentlyContinue
+
+# If the resource group does not exist, create it
+if (-not $rg) {
+    New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tag
+    Write-Output "Resource group '$resourceGroupName' created."
+} else {
+    # Update the tags of the existing resource group
+    Set-AzResourceGroup -Name $resourceGroupName -Tag $tag
+    Write-Output "Resource group '$resourceGroupName' already exists. Tags updated."
+}
+
+#### Step 2 - Add a lock to the resource group ####
+$lock = New-AzResourceLock -LockName "Lock Azure DNS Resolver ResourceGroup" -LockLevel CanNotDelete -ResourceGroupName $resourceGroupName -Force
+Write-Output "Lock added to resource group '$resourceGroupName'."
+#### DEPLOYED RG LOCK #####
+
+<#-----Step 2 - Create a HUB virtual network-----#>
+
+$HubvnetName = "Allen-DNS-Hub-Vnet"
+$HubaddressPrefix = "10.0.0.0/16"
+$Hubsubnet1Name = "Azure-Private-Resolver-Endpoint-Inbound"
+$Hubsubnet1Prefix = "10.0.0.0/28"
+$Hubsubnet2Name = "Azure-Private-Resolver-Endpoint-Outbound"
+$Hubsubnet2Prefix = "10.0.0.16/28"
+$Hubsubnet3Name = "Private-Endpoints"
+$Hubsubnet3Prefix = "10.0.0.32/28"
+$HUBAPRinDNS = "168.63.129.16"
+
+
+$vnet = New-AzVirtualNetwork `
+-ResourceGroupName $resourceGroupName `
+-Location $location `
+-Name $HubvnetName `
+-AddressPrefix $HubaddressPrefix `
+-DnsServer $HUBAPRinDNS `  
+
+# Add 1st subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $Hubsubnet1Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $Hubsubnet1Prefix
+
+# Add 2nd subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $Hubsubnet2Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $Hubsubnet2Prefix
+
+# Add 3rd subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $Hubsubnet3Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $Hubsubnet3Prefix
+
+# Apply the subnet configuration to the virtual network
+$vnet | Set-AzVirtualNetwork
+
+# Add tags to the virtual network
+Set-AzResource -ResourceId $vnet.Id -Tag $tag -Force
+#>
+
+<####DEPLOYED APR HUB VNET####>
+
+<#-----Step 3 - Create a On-Premises virtual network-----#>
+
+$vnetNameOnPrem = "Allen-DNS-OnPrem-Vnet"
+$OnPremAddressPrefix = "220.0.0.0/16"
+$OnPremSubnet1Name = "VirtualMachines"
+$OnPremSubnet1Prefix = "220.0.0.0/28"
+$APRinDNS = "10.0.0.4"
+
+
+$vnet = New-AzVirtualNetwork `
+-ResourceGroupName $resourceGroupName `
+-Location $location `
+-Name $vnetNameOnPrem `
+-AddressPrefix $OnPremAddressPrefix `
+-DnsServer $APRinDNS ` 
+
+# Add 1st subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $OnPremSubnet1Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $OnPremSubnet1Prefix
+
+# Apply the subnet configuration to the virtual network
+$vnet | Set-AzVirtualNetwork
+
+# Add tags to the virtual network
+Set-AzResource -ResourceId $vnet.Id -Tag $tag -Force
+
+<#### Created a On-Premises virtual network ####>
+
+
+<#---Step 4 - Create a Spoke virtual network---#>
+
+$SpokevnetName = "Allen-DNS-Spoke-Vnet"
+$SpokeAddressPrefix = "30.0.0.0/16"
+$SpokeSubnet1Name = "VirtualMachines"
+$SpokeSubnet1Prefix = "30.0.0.0/28"
+$SpokeSubnet2Name = "Private-Endpoints"
+$SpokeSubnet2Prefix = "30.0.0.16/28"
+$APRinDNS = "10.0.0.4"
+
+
+$vnet = New-AzVirtualNetwork `
+-ResourceGroupName $resourceGroupName `
+-Location $location `
+-Name $SpokevnetName `
+-AddressPrefix $SpokeAddressPrefix `
+-DnsServer $APRinDNS ` 
+
+# Add 1st subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $SpokeSubnet1Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $SpokeSubnet1Prefix
+
+# Add 2nd subnet to the virtual network
+$vnet = Add-AzVirtualNetworkSubnetConfig `
+-Name $SpokeSubnet2Name `
+-VirtualNetwork $vnet `
+-AddressPrefix $SpokeSubnet2Prefix
+
+# Apply the subnet configuration to the virtual network
+$vnet | Set-AzVirtualNetwork
+
+# Add tags to the virtual network
+Set-AzResource -ResourceId $vnet.Id -Tag $tag -Force
+
+<#### Create a SPOKE virtual network ####>
+
+
+
+<#---PEERING HUB To Spoke---#>
+
+#variables
+#Vnet 1 and vnet 2 in same regions 
+$HubvnetName = "Allen-DNS-Hub-Vnet"
+$vnetName1 = $HubvnetName
+$SpokevnetName = "Allen-DNS-Spoke-Vnet"
+$vnetName2 = $SpokevnetName
+<#-------------------------------------------#>
+# Get the virtual network objects
+$vnet1 = Get-AzVirtualNetwork -ResourceGroupName $resourceGroupName -Name $vnetName1
+$vnet2 = Get-AzVirtualNetwork -ResourceGroupName $resourceGroupName -Name $vnetName2
+
+# Create the peering from Vnet1 to Vnet2
+Add-AzVirtualNetworkPeering -Name "VnetHub-To-VnetSpoke-Peering" `
+    -VirtualNetwork $vnet1 `
+    -RemoteVirtualNetworkId $vnet2.Id `
+	-AllowForwardedTraffic
+
+# Create the peering from Vnet2 to Vnet1
+Add-AzVirtualNetworkPeering -Name "VnetSpoke-To-VnetHub-Peering" `
+    -VirtualNetwork $vnet2 `
+    -RemoteVirtualNetworkId $vnet1.Id `
+	-AllowForwardedTraffic
+
+Write-Output "Virtual network peering setup between '$vnetName1' and '$vnetName2' is complete."
+
+<#---THIS COMPLETES THE PEERING BETWEEN HUB AND SPOKE---#>
+
+
+<#---PEERING HUB To On Premises---#>
+
+#variables
+$HubvnetName = "Allen-DNS-Hub-Vnet"
+$vnetName1 = $HubvnetName
+$vnetNameOnPrem = "Allen-DNS-OnPrem-Vnet"
+$vnetName3 = $vnetNameOnPrem
+<#-------------------------------------------#>
+# Get the virtual network objects
+$vnet1 = Get-AzVirtualNetwork -ResourceGroupName $resourceGroupName -Name $vnetName1
+$vnet2 = Get-AzVirtualNetwork -ResourceGroupName $resourceGroupName -Name $vnetName3
+
+# Create the peering from Vnet1 to Vnet3
+Add-AzVirtualNetworkPeering -Name "VnetHub-To-OnPremises-Peering" `
+    -VirtualNetwork $vnet1 `
+    -RemoteVirtualNetworkId $vnet2.Id `
+    -AllowForwardedTraffic
+
+# Create the peering from Vnet2 to Get-AzVirtualNetwork:
+Add-AzVirtualNetworkPeering -Name "OnPremises-To-VnetHub-Peering" `
+    -VirtualNetwork $vnet2 `
+    -RemoteVirtualNetworkId $vnet1.Id `
+    -AllowForwardedTraffic
+
+Write-Output "Virtual network peering setup between '$vnetName1' and '$vnetName3' is complete."
+
+<#---THIS COMPLETES THE PEERING BETWEEN HUB AND OnPremises---#>
