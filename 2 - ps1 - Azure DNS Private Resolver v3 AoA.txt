@@ -10,7 +10,7 @@ $tag = @{CustomerName="Allen"; AutoShutdownSchedule="Never"; Service="Azure Priv
 
 $DNSPrivateResolverName		= "Allen-DNS-Private-Resolver-01"
 $DNSForwardingRuleSetName 	= "Allen-Azure-Forwarding-RuleSet" 
-$DNSVitualLinkName 			= "Allen-DNS-Hub-Vnet-link"
+$DNSVitualLinkName 		= "Allen-DNS-Hub-Vnet-link"
 
 $VNETresourceGroupName 		= "Allen-APR"
 $vnetName 			= "Allen-DNS-Hub-Vnet"
@@ -18,9 +18,9 @@ $subnet1Name 			= "Azure-Private-Resolver-Endpoint-Inbound"
 $subnet1Prefix 			= "10.0.0.0/28"
 $subnet2Name 			= "Azure-Private-Resolver-Endpoint-Outbound"
 
-$DNSInboundEndPointName = "Azure-Private-Resolver-Endpoint-Inbound"
-$DNSOutboundEndPointName= "Azure-Private-Resolver-Endpoint-Outbound"
-$StaticInboundPrivateIP	= "10.0.0.4"
+$DNSInboundEndPointName 	= "Azure-Private-Resolver-Endpoint-Inbound"
+$DNSOutboundEndPointName	= "Azure-Private-Resolver-Endpoint-Outbound"
+$StaticInboundPrivateIP		= "10.0.0.4"
 
 $vnetId = (Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName).Id
 $vnetId
