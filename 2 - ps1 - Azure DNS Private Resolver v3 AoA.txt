@@ -1,0 +1,141 @@
+##Create an Azure DNS Private Resolver###
+
+$SubscriptionID = Set-AzContext -Subscription "0000-0000" #sub ID
+
+#variables:
+$resourceGroupName 	= "Allen-APR"		
+$location 		= "northeurope"
+
+$tag = @{CustomerName="Allen"; AutoShutdownSchedule="Never"; Service="Azure Private DNS Resolver"; DeployedBy="PwC South Africa"; Environment="Production";}
+
+$DNSPrivateResolverName		= "Allen-DNS-Private-Resolver-01"
+$DNSForwardingRuleSetName 	= "Allen-Azure-Forwarding-RuleSet" 
+$DNSVitualLinkName 			= "Allen-DNS-Hub-Vnet-link"
+
+$VNETresourceGroupName 		= "Allen-APR"
+$vnetName 			= "Allen-DNS-Hub-Vnet"
+$subnet1Name 			= "Azure-Private-Resolver-Endpoint-Inbound"
+$subnet1Prefix 			= "10.0.0.0/28"
+$subnet2Name 			= "Azure-Private-Resolver-Endpoint-Outbound"
+
+$DNSInboundEndPointName = "Azure-Private-Resolver-Endpoint-Inbound"
+$DNSOutboundEndPointName= "Azure-Private-Resolver-Endpoint-Outbound"
+$StaticInboundPrivateIP	= "10.0.0.4"
+
+$vnetId = (Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName).Id
+$vnetId
+$subnetId = "/subscriptions/$SubscriptionID/resourceGroups/$VNETresourceGroupName/providers/Microsoft.Network/virtualNetworks/$vnetName/subnets/$subnet1Name"
+$subnetId = (Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName).Id
+
+
+
+#Register the Microsoft.Network provider namespace
+Register-AzResourceProvider -ProviderNamespace Microsoft.Network
+
+
+<#------------------------------#>
+#Step 1 - Verify or Create a resource group container:
+$rg = Get-AzResourceGroup -Name $resourceGroupName -ErrorAction SilentlyContinue
+
+# If the resource group does not exist, create it
+if (-not $rg) {
+    New-AzResourceGroup -Name $resourceGroupName -Location $location -Tag $tag
+    Write-Output "Resource group '$resourceGroupName' created."
+} else {
+    # Update the tags of the existing resource group
+    Set-AzResourceGroup -Name $resourceGroupName -Tag $tag
+    Write-Output "Resource group '$resourceGroupName' already exists. Tags updated."
+}
+<#
+#Set resource group locks:
+Set-AzResourceLock `
+	-LockName "Locked by Allen" `
+	-LockLevel CanNotDelete `
+	-LockNotes "This sandbox resource has been locked by Allen" `
+	-ResourceGroupName $ResourceGroupName `
+	-Force
+#>
+
+<#---------CREATED THE RESOURCE GROUP---------------------#>
+
+<#---------Identify the destination virtual network-------#>
+Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName
+
+
+<#----------Create the DNS resolver----------#>
+New-AzDnsResolver `
+	-Name $DNSPrivateResolverName `
+	-ResourceGroupName $ResourceGroupName `
+	-Location $location `
+	-VirtualNetworkId $vnetId `
+	-Tag $tag
+
+
+#Verify that the DNS resolver was created successfully:
+$dnsResolver = Get-AzDnsResolver -Name $DNSPrivateResolverName -ResourceGroupName $ResourceGroupName
+$dnsResolver.ToJsonString()
+<#-----------CREATED THE EMPTY AZURE PRIVATE RESOLVER-------------------#>
+
+
+
+<#----------Create a DNS resolver inbound endpoint-------------------#>
+#Check Virtual Network and Subnet IDs
+$vnet = Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName
+$subnet1 = Get-AzVirtualNetworkSubnetConfig -Name $subnet1Name -VirtualNetwork $vnet
+
+#Create Inbound Endpoint with Verified IDs
+$ipconfig = New-AzDnsResolverIPConfigurationObject `
+    -PrivateIPAddress $StaticInboundPrivateIP `
+    -PrivateIPAllocationMethod Static `
+    -SubnetId $subnet1.Id
+
+New-AzDnsResolverInboundEndpoint `
+    -DnsResolverName $DNSPrivateResolverName `
+    -Name $DNSInboundEndPointName `
+    -ResourceGroupName $resourceGroupName `
+    -Location $location `
+    -Tag $tag `
+    -IpConfiguration $ipconfig
+<#-----------CREATED THE INBOUND ENDPOINT-------------------#>
+
+
+
+<#----------Create a DNS resolver outbound endpoint----------#>
+#Check Virtual Network and Subnet IDs
+$vnet = Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName
+$subnet2 = Get-AzVirtualNetworkSubnetConfig -Name $subnet2Name -VirtualNetwork $vnet
+
+New-AzDnsResolverOutboundEndpoint `
+    -DnsResolverName $DNSPrivateResolverName `
+    -Name $DNSOutboundEndPointName `
+    -ResourceGroupName $resourceGroupName `
+    -Location $location `
+    -Tag $tag `
+    -SubnetId $subnet2.Id
+<#------------CREATED THE OUTBOUND ENDPOINT------------#>
+
+
+<#-----CREATE A DNS RESOLVER FORWARDING RULESET-----#>
+New-AzDnsForwardingRuleset `
+	-Name $DNSForwardingRuleSetName `
+	-ResourceGroupName $ResourceGroupName `
+	-DnsResolverOutboundEndpoint $outboundendpoint `
+	-Location $location -Tag $tag
+<#-------CREATED THE RULESET-----------------------#>
+
+
+
+<#-----CREATE A VIRTUAL NETWORK LINK-----------------------#>
+$SubscriptionID = Set-AzContext -Subscription "ab0ccf44-cf7c-444c-a609-3811d5902f92" #sub ID
+$SubscriptionID = "ab0ccf44-cf7c-444c-a609-3811d5902f92"
+
+$dnsForwardingRuleset = Get-AzDnsForwardingRuleset -Name $DNSForwardingRuleSetName -ResourceGroupName $resourceGroupName
+$vnet = Get-AzVirtualNetwork -Name $vnetName -ResourceGroupName $VNETresourceGroupName
+
+$vnetlink = New-AzDnsForwardingRulesetVirtualNetworkLink `
+    -DnsForwardingRulesetName $dnsForwardingRuleset.Name `
+    -ResourceGroupName $resourceGroupName `
+    -VirtualNetworkLinkName $DNSVitualLinkName `
+    -VirtualNetworkId $vnet.Id `
+    -SubscriptionId $SubscriptionID
+<#------------DEPLOYMENT COMPLETE!------------#>

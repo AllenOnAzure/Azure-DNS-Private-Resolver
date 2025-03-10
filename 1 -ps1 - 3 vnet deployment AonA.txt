@@ -2,7 +2,7 @@
 
 #Variables:
 $resourceGroupName = "Allen-APR"
-$location = "southafricanorth"
+$location = "northeurope"
 
 $SubscriptionID = "000-000-000-000-3811d5902f92" #sub name
 
